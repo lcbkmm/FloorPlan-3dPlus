@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#fdfbf6">
+<title>FloorPlan-3dPlus</title>
+<!-- 设计字体：展示字 Cormorant Garamond（图签）/ 正文 IBM Plex Sans / 数据 IBM Plex Mono。
+     走与 three.js 相同的 jsdelivr CDN，font-display:swap，加载失败自动回落到系统中文衬线/黑体。
+     fontsource 的 unicode-range 让浏览器只下载实际用到的子集。 -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/cormorant-garamond@5.0.0/600.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/cormorant-garamond@5.0.0/700.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.0.0/400.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.0.0/500.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans@5.0.0/600.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-mono@5.0.0/400.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-mono@5.0.0/500.css">
+<link rel="stylesheet" href="css/app.css?v=1794388143056">
+<script src="js/dxf-import.js?v=1794388143056"></script>
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+</head>
+<body>
+<!-- ======================= 方案列表（启动页） ======================= -->
+<div class="landing" id="landing">
+  <div class="lp-head">
+    <div class="lp-brand">
+      <b data-en="My plans">我的方案</b>
+      <span data-en="Pick a plan to continue, or start a new one">选择一个方案继续装修设计，或新建一个</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="grp lp-lang" id="langSel2" role="group" aria-label="Language / 语言">
+      <button class="btn chip" data-lang="zh" title="中文" data-en-title="Chinese">中</button>
+      <button class="btn chip" data-lang="en" title="English" data-en-title="English">英</button>
+    </div>
+    <button class="btn primary lp-new js-new" id="lpNew" data-en="+ New plan">+ 新建方案</button>
+  </div>
+  <div class="lp-body">
+    <div class="lp-empty" id="lpEmpty" hidden>
+      <div class="lp-empty-art">◫</div>
+      <b data-en="No plans yet">还没有任何方案</b>
+      <p data-en="Create a plan to start laying out walls, furniture and floors.">新建一个方案，开始布置墙体、家具与地面材料。</p>
+      <div class="lp-empty-acts">
+        <button class="btn primary js-new" data-en="+ New plan">+ 新建方案</button>
+        <button class="btn" id="lpSample" data-en="Load sample plan">载入示例户型</button>
+      </div>
+    </div>
+    <div class="lp-grid" id="lpGrid"></div>
+  </div>
+  <div class="lp-foot">
+    <span data-en="Plans are saved in this browser only. Export JSON from File ▾ to back them up.">方案仅保存在当前浏览器 · 可在「文件 ▾ → 导出方案 JSON」备份</span>
+  </div>
+</div>
+
+<div class="app">
+  <header>
+    <button class="btn chip back-btn" id="backToProjects" title="返回方案列表" data-en-title="Back to plan list" data-en="← Plans">← 方案</button>
+    <div class="grp" id="paneBtns">
+      <button class="btn chip" id="tgLib" data-en="◧ Library">◧ 家具库</button>
+      <button class="btn chip" id="tgPanel" data-en="Properties ◨">属性 ◨</button>
+    </div>
+    <div class="brand"><b data-en="3BR 2LR 2BA · Interior Design">三室两厅两卫 · 装修设计</b><span id="subtitle">双层户型 · 尺寸单位 mm</span></div>
+    <div class="grp seg" id="viewSeg" title="切换 2D / 3D (T)" data-en-title="Switch 2D / 3D (T)">
+      <span class="pill"></span>
+      <button class="btn" data-view="2d" data-en="2D Plan">2D 平面</button>
+      <button class="btn" data-view="3d" data-en="3D Scene">3D 场景</button>
+    </div>
+    <div class="grp seg" id="floorSeg" title="切换楼层：2D / 3D 鸟瞰只显示当前层，漫游显示整栋" data-en-title="Switch floor · 2D / 3D orbit shows this floor only · walk shows all floors">
+      <button class="btn chip on" data-floor="0">1F</button>
+      <button class="btn chip" data-floor="1">2F</button>
+    </div>
+    <div class="grp only2d" id="floorHOpts" title="当前层高（mm）" data-en-title="Current floor height (mm)">
+      <span data-en="Height">层高</span>
+      <input type="number" id="floorHIn" value="2800" min="2200" max="4000" step="50" inputmode="numeric">
+      <span>mm</span>
+    </div>
+    <div class="grp only2d" id="linkInfo" hidden title="每层各有独立的连通区：可分别移动、互不影响；拖动另一层的青色连通区可在本层设锚点（另一层原位不变）；3D 中两层建筑会自动平移使连通区重合" data-en-title="Each floor has its own independent link area: move them separately; drag the cyan link from another floor to set an anchor here (that floor stays put); in 3D both buildings shift so the links coincide">
+      <span data-en="Links">连通区</span> <b id="linkCount">0</b>
+      <button class="btn chip" id="linkClear" title="清除本层所有连通区域" data-en-title="Clear all link areas on this floor" data-en="Clear">清除</button>
+    </div>
+    <div class="grp only3d">
+      <button class="btn chip" id="whole3d" title="默认只显示当前楼层；开启可在鸟瞰里预览整栋（漫游始终显示整栋）" data-en-title="Orbit shows the active floor by default; turn on to preview the whole building (walk always shows all floors)" data-en="Whole building">整栋</button>
+    </div>
+    <div class="grp only2d" id="tools">
+      <button class="btn on" data-tool="select" title="选择 / 移动 (V)" data-en-title="Select / Move (V)" data-en="Select">选择</button>
+      <button class="btn" data-tool="draw" title="画墙 (W) · 拖拽绘制正交墙体" data-en-title="Draw wall (W) · drag to create orthogonal walls" data-en="Draw wall">画墙</button>
+      <button class="btn" data-tool="erase" title="删墙 (E) · 点击删除墙体" data-en-title="Erase wall (E) · click to delete" data-en="Erase wall">删墙</button>
+      <button class="btn" data-tool="measure" title="测量 (M)" data-en-title="Measure (M)" data-en="Measure">测量</button>
+      <button class="btn" data-tool="calibrate" title="校准底图 · 画已知长度线段并输入实际尺寸" data-en-title="Calibrate underlay · draw a known-length segment" data-en="Calibrate">校准</button>
+      <button class="btn" data-tool="demolish" title="拆改墙体 (X) · 选中后可拖移 / 改长度 / 标记拆除" data-en-title="Edit walls (X) · drag to move, ends to resize, mark demolish" data-en="Edit walls">拆改墙体</button>
+      <button class="btn" data-tool="link" title="连通区 (L) · 拖出矩形定义本层与下一层的连通区域，本层楼板将在此挖空；下层显示同样的矩形，用于上下两层对齐" data-en-title="Link area (L) · drag a rectangle to link this floor with the one below; this slab is cut out here, and the same rectangle shows below to align both floors" data-en="Link area">连通区</button>
+    </div>
+    <div class="grp only2d" id="wallKind" hidden title="画墙类型" data-en-title="Wall type when drawing">
+      <button class="btn chip on" data-kind="n" title="普通隔墙" data-en-title="Normal partition" data-en="Normal">普通</button>
+      <button class="btn chip" data-kind="b" title="承重墙（不可拆改）" data-en-title="Load-bearing (cannot demolish)" data-en="Bearing">承重</button>
+      <button class="btn chip" data-kind="win" title="带窗墙 · 绘制时自动开窗，窗宽/窗高/台高可调" data-en-title="Wall with window · auto opening; width/height/sill adjustable" data-en="Windowed">带窗</button>
+      <button class="btn chip" data-kind="low" title="矮围墙（默认高 1050mm，可选中后改高度；可开花园门）" data-en-title="Low wall (default 1050mm; edit height when selected; garden gates OK)" data-en="Low wall">矮围墙</button>
+      <button class="btn chip" data-kind="beam" title="横梁（贴天花下挂，可编辑下垂高度）" data-en-title="Ceiling beam (editable drop depth)" data-en="Beam">横梁</button>
+    </div>
+    <div class="grp only2d" id="wallThick" hidden title="画墙厚度（手动输入 mm）" data-en-title="Wall thickness (mm, type a value)">
+      <span data-en="Thick">厚度</span>
+      <input type="number" id="wallThickIn" value="240" min="20" max="1200" step="10" inputmode="numeric">
+      <span>mm</span>
+    </div>
+    <div class="grp only2d" id="wallBeamOpts" hidden title="横梁下垂高度（mm）" data-en-title="Beam drop depth (mm)">
+      <span data-en="Drop">下垂</span>
+      <input type="number" id="beamDropIn" value="400" min="150" max="1800" step="10" inputmode="numeric">
+      <span>mm</span>
+    </div>
+    <div class="grp only2d" id="wallWinOpts" hidden title="带窗墙的窗户尺寸（mm）" data-en-title="Window size for windowed walls (mm)">
+      <span data-en="W">窗宽</span>
+      <input type="number" id="winWIn" value="0" min="0" max="8000" step="50" inputmode="numeric" title="0 = 随墙长自适应（留边）" data-en-title="0 = fit wall length (with jambs)">
+      <span data-en="H">窗高</span>
+      <input type="number" id="winHIn" value="1500" min="400" max="2800" step="50" inputmode="numeric">
+      <span data-en="Sill">台高</span>
+      <input type="number" id="winSillIn" value="900" min="0" max="2000" step="50" inputmode="numeric">
+      <button type="button" class="btn chip" id="winFloorBtn" title="落地窗：台高 0、窗高 2400" data-en-title="Floor-to-ceiling: sill 0, height 2400" data-en="Full">落地</button>
+    </div>
+    <div class="grp only2d">
+      <button class="btn primary" id="detectRooms" title="根据墙体自动识别封闭房间" data-en-title="Detect closed rooms from walls" data-en="Detect rooms">识别房间</button>
+    </div>
+    <div class="grp only3d" id="modes3d">
+      <button class="btn on" data-mode="orbit" data-en="Orbit">鸟瞰</button>
+      <button class="btn" data-mode="walk" data-en="Walk">漫游</button>
+    </div>
+    <div class="grp only3d">
+      <button class="btn" id="vIso" data-en="Iso">斜视</button>
+      <button class="btn" id="vTop" data-en="Top">俯视</button>
+    </div>
+    <div class="grp">
+      <button class="btn" id="undo" title="撤销 (Ctrl+Z)" data-en-title="Undo (Ctrl+Z)" data-en="Undo">撤销</button>
+      <button class="btn" id="redo" title="重做 (Ctrl+Shift+Z)" data-en-title="Redo (Ctrl+Shift+Z)" data-en="Redo">重做</button>
+      <button class="btn danger" id="clearAll" title="清空所有家具家电（可撤销）" data-en-title="Remove all furniture and appliances (undoable)" data-en="Clear">清空布置</button>
+    </div>
+    <div class="grp only2d" id="layers">
+      <button class="btn chip on" data-layer="dims" data-en="Dims">尺寸</button>
+      <button class="btn chip on" data-layer="labels" data-en="Rooms">房间</button>
+      <button class="btn chip on" data-layer="furn" data-en="Furniture">家具</button>
+      <button class="btn chip" data-layer="grid" data-en="Grid">网格</button>
+      <button class="btn chip" data-layer="bearing" data-en="Bearing walls">承重墙</button>
+      <button class="btn chip" data-layer="cadLines" title="显示 CAD 线稿底图" data-en-title="Show CAD line underlay" data-en="CAD lines">CAD线稿</button>
+      <button class="btn chip on" data-layer="wallSnap" title="拖动家具时贴墙吸附" data-en-title="Snap furniture to walls while dragging" data-en="Wall snap">贴墙吸附</button>
+    </div>
+    <div class="grp only3d">
+      <button class="btn chip on" data-cut="full" data-en="Full walls">全高墙</button>
+      <button class="btn chip" data-cut="1.2" data-en="Cut walls">剖切墙</button>
+    </div>
+    <div class="grp only3d" id="toggles3d">
+      <button class="btn chip on" data-t="furn" data-en="Furniture">家具</button>
+      <button class="btn chip on" data-t="labels" data-en="Labels">房间名</button>
+      <button class="btn chip" data-t="night" data-en="Night">夜景</button>
+    </div>
+    <div class="grp only3d"><label class="range"><span data-en="Sun">日照</span> <input type="range" id="sun" min="7" max="18" step=".25" value="10" style="width:84px"><span id="sunT">10:00</span></label></div>
+    <div class="spacer"></div>
+    <div class="tail">
+    <div class="grp" id="langSel" role="group" aria-label="Language / 语言">
+      <button class="btn chip" data-lang="zh" title="中文" data-en-title="Chinese">中</button>
+      <button class="btn chip" data-lang="en" title="English" data-en-title="English">英</button>
+    </div>
+    <button class="btn" id="fullscreen" title="全屏 (Shift+F)">⛶ 全屏</button>
+    <details class="menu"><summary class="btn" data-en="File ▾">文件 ▾</summary>
+      <div class="menu-pop">
+        <button class="btn" id="importDxf" data-en="Import CAD (DXF)">导入 CAD (DXF)</button>
+        <button class="btn" id="importImg" data-en="Upload underlay (new canvas)">上传底图（新画布）</button>
+        <button class="btn" id="importImgOnly" hidden data-en="Set image underlay only">仅设为底图</button>
+        <button class="btn" id="clearBg" data-en="Clear image underlay">清除图片底图</button>
+        <button class="btn" id="bgCalibrate" data-en="Calibrate underlay scale">校准底图比例</button>
+        <button class="btn" id="clearWalls" data-en="Clear all walls">清空全部墙体</button>
+        <div class="bg-tools">
+          <div class="bg-tools-head"><b data-en="Underlay opacity">底图透明度</b><span class="bg-val" id="bgOpacityT">35%</span></div>
+          <div class="bg-tools-row">
+            <button type="button" class="btn chip bg-nudge" data-bg="opacity" data-delta="-1" title="−1%" data-keep-menu>−</button>
+            <input type="range" id="bgOpacity" min="0" max="100" value="35">
+            <button type="button" class="btn chip bg-nudge" data-bg="opacity" data-delta="1" title="+1%" data-keep-menu>+</button>
+          </div>
+        </div>
+        <div class="bg-tools">
+          <div class="bg-tools-head"><b data-en="Underlay scale">底图缩放</b><span class="bg-val" id="bgScaleT">150%</span></div>
+          <div class="bg-tools-row">
+            <button type="button" class="btn chip bg-nudge" data-bg="scale" data-delta="-1" title="−1%" data-keep-menu>−</button>
+            <input type="range" id="bgScale" min="10" max="800" value="150">
+            <button type="button" class="btn chip bg-nudge" data-bg="scale" data-delta="1" title="+1%" data-keep-menu>+</button>
+          </div>
+        </div>
+        <button class="btn primary" id="saveDesign" data-en="Save plan">保存方案</button>
+        <button class="btn" id="newBlank" data-en="New blank canvas">新建空白画布</button>
+        <button class="btn" id="exportPng" data-en="Export image">导出图片</button>
+        <button class="btn" id="exportJson" data-en="Export plan JSON">导出方案 JSON</button>
+        <button class="btn" id="importJson" data-en="Import plan">导入方案</button>
+        <button class="btn danger" id="reset" data-en="Reset to default">重置为默认方案</button>
+      </div></details>
+    </div>
+    <input type="file" id="fileIn" accept=".json,application/json" hidden>
+    <input type="file" id="dxfIn" accept=".dxf,image/vnd.dxf,application/dxf,application/octet-stream" hidden>
+    <input type="file" id="imgIn" accept="image/*" hidden>
+    <input type="file" id="imgInOnly" accept="image/*" hidden>
+  </header>
+  <div id="calModal" class="modal-back" hidden>
+    <div class="modal" role="dialog" aria-modal="true" style="max-width:420px">
+      <header>
+        <b data-en="Calibrate underlay">校准底图比例</b>
+        <span class="spacer"></span>
+        <button class="btn" id="calModalClose" data-en="Cancel">取消</button>
+      </header>
+      <div class="body">
+        <p style="margin:0 0 12px;color:var(--muted)" data-en="Enter the real-world length of the segment you drew. The underlay will scale to match.">输入你画的这段线在现实中的长度，底图将按比例自动缩放。</p>
+        <div class="form">
+          <label class="full"><span data-en="Measured on plan">图上测得</span>
+            <div style="display:flex;align-items:baseline;gap:6px;margin-top:4px"><b id="calSegLen" style="font-size:18px">0</b><span>mm</span></div>
+          </label>
+          <label class="full"><span data-en="Real length">实际长度</span> (mm)
+            <input type="number" id="calRealIn" value="" min="1" max="100000" step="10" inputmode="numeric" placeholder="例如 3600">
+          </label>
+        </div>
+      </div>
+      <div class="foot">
+        <button class="btn" id="calCancel" data-en="Cancel">取消</button>
+        <button class="btn primary" id="calApply" data-en="Apply scale">应用缩放</button>
+      </div>
+    </div>
+  </div>
+  <div id="dxfModal" class="modal-back" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <header>
+        <b data-en="Select a drawing sheet">选择图纸分幅</b>
+        <span class="spacer"></span>
+        <button class="btn" id="dxfModalClose" data-en="Cancel">取消</button>
+      </header>
+      <div class="body">
+        <p id="dxfModalHint" style="margin:0 0 12px;color:var(--muted)"></p>
+        <div class="sheet-grid" id="sheetGrid"></div>
+      </div>
+      <div class="foot">
+        <button class="btn" id="dxfCancel" data-en="Cancel">取消</button>
+        <button class="btn primary" id="dxfApply" data-en="Import selected">导入选中图纸</button>
+      </div>
+    </div>
+  </div>
+
+  <aside class="lib">
+    <div id="lib3d" class="only3d">
+      <h4 data-en="Rooms · click to fly there">房间 · 点击飞到该房间</h4>
+      <div id="roomList"></div>
+    </div>
+    <div id="lib"></div>
+  </aside>
+
+  <main id="stage">
+    <svg id="plan" class="tool-select" font-family="-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
+      <defs id="defs"></defs>
+      <g id="gGrid"></g>
+      <g id="gRooms"></g>
+      <g id="gBg"></g>
+      <g id="gFurn"></g>
+      <g id="gWalls"></g>
+      <g id="gLinks"></g>
+      <g id="gOpen"></g>
+      <g id="gLabels" pointer-events="none"></g>
+      <g id="gDims" pointer-events="none"></g>
+      <g id="gMeasure" pointer-events="none"></g>
+      <g id="gDraw" pointer-events="none"></g>
+      <g id="gSel"></g>
+    </svg>
+    <div id="view3d">
+      <div id="walkOverlay"><div><h3 data-en="Walk mode">漫游模式</h3>
+        <p id="wo1"></p>
+        <p id="wo2"></p>
+        <p id="wo3"></p></div></div>
+      <div id="cross"></div>
+      <div id="joy"><i></i></div>
+      <button class="btn primary" id="walkExit" data-en="Exit walk">退出漫游</button>
+      <div id="hint3d"></div>
+    </div>
+    <div class="scalebar" id="scalebar"><span id="sbText">1 m</span><div class="bar" id="sbBar"></div></div>
+    <div class="modehint" id="modehint"></div>
+    <div id="fab"></div>
+  </main>
+
+  <aside class="right"><div id="panel"></div></aside>
+
+  <footer>
+    <span class="only2d">X <b id="cx">—</b></span><span class="only2d">Y <b id="cy">—</b></span>
+    <span class="only2d"><span data-en="Scale">当前比例</span> <b id="ratio">—</b></span>
+    <span id="hover" class="only2d"></span>
+    <span class="spacer"></span>
+    <span id="tip"></span>
+  </footer>
+</div>
+  <div id="projModal" class="modal-back" hidden>
+    <div class="modal" role="dialog" aria-modal="true" style="max-width:460px">
+      <header>
+        <b data-en="New plan">新建方案</b>
+        <span class="spacer"></span>
+        <button class="btn" id="projModalClose" data-en="Cancel">取消</button>
+      </header>
+      <div class="body">
+    <div class="form">
+          <label class="full"><span data-en="Plan name">方案名称</span>
+            <input id="pmName" maxlength="30" placeholder="例如：嘉裕花园 3 栋 1201">
+          </label>
+          <label class="full"><span data-en="Floor height (mm)">层高 (mm)</span>
+            <input type="number" id="pmHeight" value="2800" min="2200" max="4000" step="50" inputmode="numeric">
+          </label>
+          <label class="full"><span data-en="Floors">层数</span>
+            <div class="pm-floors" id="pmFloors">
+              <button type="button" class="btn chip" data-n="1" data-en="1 floor">1 层</button>
+              <button type="button" class="btn chip" data-n="2" data-en="2 floors">2 层</button>
+              <button type="button" class="btn chip" data-n="3" data-en="3 floors">3 层</button>
+    </div>
+          </label>
+        </div>
+        <p class="pm-hint" data-en="After creating, import a CAD (DXF) drawing or upload a floor-plan image to trace the walls.">创建后可导入 CAD 图纸，或上传户型图作为底图沿图描墙。</p>
+        <button class="im-choice" id="pmImport" type="button" style="width:100%;margin-top:12px">
+          <b data-en="Import an exported plan JSON">导入已保存的方案 JSON</b>
+          <small data-en="Create this plan directly from an exported .json file — every floor, wall, furniture item and link is restored. The plan name comes from the file by default.">用之前导出的方案文件直接新建：完整还原全部楼层、墙体、家具与连通区；默认沿用文件中的方案名</small>
+        </button>
+        <input type="file" id="pmFileIn" accept=".json,application/json" hidden>
+      </div>
+      <div class="foot">
+        <button class="btn" id="pmSample" data-en="Fill with sample plan">载入示例户型</button>
+        <span class="spacer"></span>
+        <button class="btn" id="pmCancel" data-en="Cancel">取消</button>
+        <button class="btn primary" id="pmCreate" data-en="Create plan">创建方案</button>
+      </div>
+    </div>
+  </div>
+  <div id="renameModal" class="modal-back" hidden>
+    <div class="modal" role="dialog" aria-modal="true" style="max-width:380px">
+      <header>
+        <b data-en="Rename plan">重命名方案</b>
+        <span class="spacer"></span>
+        <button class="btn" id="renameModalClose" data-en="Cancel">取消</button>
+      </header>
+      <div class="body">
+        <div class="form">
+          <label class="full"><span data-en="Plan name">方案名称</span>
+            <input id="rnInput" maxlength="30">
+          </label>
+        </div>
+      </div>
+      <div class="foot">
+        <button class="btn" id="rnCancel" data-en="Cancel">取消</button>
+        <button class="btn primary" id="rnApply" data-en="Save">保存</button>
+      </div>
+    </div>
+  </div>
+  <div id="importModal" class="modal-back" hidden>
+    <div class="modal" role="dialog" aria-modal="true" style="max-width:480px">
+      <header>
+        <b data-en="Import plan">导入方案</b>
+        <span class="spacer"></span>
+        <button class="btn" id="importModalClose" data-en="Cancel">取消</button>
+      </header>
+      <div class="body">
+        <p class="im-info" id="imInfo"></p>
+        <div class="im-choices">
+          <button class="im-choice" id="imToFloor" type="button">
+            <b><span data-en="Import into current floor">导入到当前楼层</span> <em id="imFloorName"></em></b>
+            <small data-en="Only replaces walls, furniture and flooring of this floor. Other floors stay untouched.">只替换该楼层的墙体、家具与地面，其他楼层保持不变</small>
+          </button>
+          <button class="im-choice" id="imNewProject" type="button">
+            <b data-en="Import as a new plan">导入为新方案</b>
+            <small data-en="Keeps the current plan and adds the file as a new card.">保留现有方案，把这个文件另存为一张新的方案卡片</small>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+<div id="toast"></div>
+<script src="js/i18n.js?v=1794388143056"></script>
+<script src="js/plan-data.js?v=1794388143056"></script>
+<script src="js/catalog.js?v=1794388143056"></script>
+<script src="js/floors.js?v=1794388143056"></script>
+<script src="js/core.js?v=1794388143056"></script>
+<script src="js/render-2d.js?v=1794388143056"></script>
+<script src="js/panel.js?v=1794388143056"></script>
+<script src="js/ops.js?v=1794388143056"></script>
+<script src="js/rooms.js?v=1794388143056"></script>
+<script src="js/input.js?v=1794388143056"></script>
+<script src="js/app.js?v=1794388143056"></script>
+<script src="js/projects.js?v=1794388143056"></script>
+<script src="js/bridge-3d.js?v=1794388143056"></script>
+<script type="module" src="js/view3d.js?v=1794388143056"></script>
+</body>
+</html>
